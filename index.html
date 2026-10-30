@@ -1210,6 +1210,7 @@
         }
 
         let currentKMapVars = 3;
+        let currentKMapSimplifiedSOP = "";
         let kmapState = {};
 
         function initKMap() {
@@ -1339,55 +1340,164 @@
             solveKMap();
         }
 
-        function solveKMap() {
-            const activeMins = [];
+                function solveKMap() {
+            const ones = [];
+            const dcs = [];
             for (const k in kmapState) {
-                if (kmapState[k] === 1 || kmapState[k] === 'X') {
-                    activeMins.push(parseInt(k));
-                }
+                if (kmapState[k] === 1) ones.push(parseInt(k));
+                else if (kmapState[k] === 'X') dcs.push(parseInt(k));
             }
 
             const resDisplay = document.getElementById('kmapSimplifiedResult');
             const expDisplay = document.getElementById('kmapGroupExplanation');
             const elimDisplay = document.getElementById('kmapEliminatedVars');
+            const optDisplay = document.getElementById('kmapOptRate');
 
-            if (activeMins.length === 0) {
+            if (ones.length === 0) {
                 resDisplay.textContent = 'F = 0';
-                expDisplay.innerHTML = '• Hiçbir minterm aktif değil. Devre çıkışı lojik-0 durumundadır.';
+                expDisplay.innerHTML = '• Hiçbir minterm aktif değil. Devre çıkışı lojik-0 (GND) durumundadır.';
                 elimDisplay.textContent = '0 Terim';
+                if (optDisplay) optDisplay.textContent = '%100 Tasarruf';
+                currentKMapSimplifiedSOP = '0';
                 return;
             }
 
             const totalCells = Math.pow(2, currentKMapVars);
-            if (activeMins.length === totalCells) {
+            if (ones.length === totalCells) {
                 resDisplay.textContent = 'F = 1';
-                expDisplay.innerHTML = '• Tüm mintermler aktiftir. Fonksiyon lojik-1 sabitine eşittir.';
-                elimDisplay.textContent = `${currentKMapVars} Değişken`;
+                expDisplay.innerHTML = '• Tüm mintermler aktiftir. Fonksiyon daima lojik-1 (VCC) sabitine eşittir.';
+                elimDisplay.textContent = `${currentKMapVars} Değişken (Tümü elendi)`;
+                if (optDisplay) optDisplay.textContent = '%100 Tasarruf';
+                currentKMapSimplifiedSOP = '1';
                 return;
             }
 
-            let terms = [];
-            if (currentKMapVars === 2) {
-                if (kmapState[0] && kmapState[1]) terms.push("A'");
-                if (kmapState[2] && kmapState[3]) terms.push("A");
-                if (kmapState[0] && kmapState[2]) terms.push("B'");
-                if (kmapState[1] && kmapState[3]) terms.push("B");
-            } else if (currentKMapVars === 3) {
-                if (kmapState[0] && kmapState[1] && kmapState[3] && kmapState[2]) terms.push("A'");
-                if (kmapState[4] && kmapState[5] && kmapState[7] && kmapState[6]) terms.push("A");
-                if (kmapState[0] && kmapState[4] && kmapState[2] && kmapState[6]) terms.push("C'");
-                if (kmapState[1] && kmapState[5] && kmapState[3] && kmapState[7]) terms.push("C");
+            const varNames = ['A', 'B', 'C', 'D'].slice(0, currentKMapVars);
+            const allTerms = Array.from(new Set([...ones, ...dcs]));
+
+            function toBin(m) {
+                return m.toString(2).padStart(currentKMapVars, '0');
             }
 
-            if (terms.length === 0) {
-                resDisplay.textContent = `Σm(${activeMins.join(', ')}) [Sadeleşme Hazır]`;
-                expDisplay.innerHTML = `• ${activeMins.length} adet minterm seçildi.<br>• Komşu 2'li ve 4'lü gruplar Gray kodu sütunları üzerinden birleştirilerek terimler elendi.`;
-            } else {
-                resDisplay.textContent = 'F = ' + Array.from(new Set(terms)).join(' + ');
-                expDisplay.innerHTML = `• Başarılı gruplama yapıldı! Gruplar ortak değişkenleri koruyarak değişen bitleri eledi.`;
+            let currentCubes = {};
+            allTerms.forEach(m => {
+                const b = toBin(m);
+                const count = (b.match(/1/g) || []).length;
+                if (!currentCubes[count]) currentCubes[count] = [];
+                currentCubes[count].push({ cube: b, mins: [m] });
+            });
+
+            const primeImplicants = [];
+
+            while (Object.keys(currentCubes).length > 0) {
+                const nextCubes = {};
+                const combined = new Set();
+                const keys = Object.keys(currentCubes).map(Number).sort((a, b) => a - b);
+
+                for (let i = 0; i < keys.length; i++) {
+                    const k = keys[i];
+                    const nextK = k + 1;
+                    if (currentCubes[nextK]) {
+                        currentCubes[k].forEach(item1 => {
+                            currentCubes[nextK].forEach(item2 => {
+                                let diff = 0;
+                                let diffPos = -1;
+                                for (let p = 0; p < currentKMapVars; p++) {
+                                    if (item1.cube[p] !== item2.cube[p]) {
+                                        diff++;
+                                        diffPos = p;
+                                    }
+                                }
+                                if (diff === 1) {
+                                    const newCube = item1.cube.substring(0, diffPos) + '-' + item1.cube.substring(diffPos + 1);
+                                    combined.add(item1.cube);
+                                    combined.add(item2.cube);
+                                    const nextCount = (newCube.match(/1/g) || []).length;
+                                    if (!nextCubes[nextCount]) nextCubes[nextCount] = [];
+                                    const mergedMins = Array.from(new Set([...item1.mins, ...item2.mins])).sort((a,b)=>a-b);
+                                    if (!nextCubes[nextCount].some(x => x.cube === newCube && x.mins.join(',') === mergedMins.join(','))) {
+                                        nextCubes[nextCount].push({ cube: newCube, mins: mergedMins });
+                                    }
+                                }
+                            });
+                        });
+                    }
+                }
+
+                keys.forEach(k => {
+                    currentCubes[k].forEach(item => {
+                        if (!combined.has(item.cube)) {
+                            if (!primeImplicants.some(p => p.cube === item.cube)) {
+                                primeImplicants.push(item);
+                            }
+                        }
+                    });
+                });
+
+                currentCubes = nextCubes;
             }
 
-            elimDisplay.textContent = `${Math.min(activeMins.length, currentKMapVars)} Değişken`;
+            let uncovered = new Set(ones);
+            const chosen = [];
+
+            ones.forEach(m => {
+                const cov = primeImplicants.filter(pi => pi.mins.includes(m));
+                if (cov.length === 1) {
+                    const pi = cov[0];
+                    if (!chosen.includes(pi)) {
+                        chosen.push(pi);
+                        pi.mins.forEach(x => uncovered.delete(x));
+                    }
+                }
+            });
+
+            while (uncovered.size > 0) {
+                let bestPI = null;
+                let bestCovCount = -1;
+                primeImplicants.forEach(pi => {
+                    const count = pi.mins.filter(x => uncovered.has(x)).length;
+                    if (count > bestCovCount) {
+                        bestCovCount = count;
+                        bestPI = pi;
+                    }
+                });
+                if (!bestPI || bestCovCount === 0) break;
+                chosen.push(bestPI);
+                bestPI.mins.forEach(x => uncovered.delete(x));
+            }
+
+            const terms = [];
+            const explanations = [];
+            let totalMinimizedLiterals = 0;
+
+            chosen.forEach(item => {
+                let termStr = '';
+                const eliminatedVars = [];
+                for (let i = 0; i < currentKMapVars; i++) {
+                    if (item.cube[i] === '1') termStr += varNames[i];
+                    else if (item.cube[i] === '0') termStr += varNames[i] + "'";
+                    else eliminatedVars.push(varNames[i]);
+                }
+                if (termStr === '') termStr = '1';
+                terms.push(termStr);
+                totalMinimizedLiterals += termStr.replace(/'/g, '').length;
+
+                const coveredOnes = item.mins.filter(x => ones.includes(x));
+                const groupSize = item.mins.length;
+                const elimText = eliminatedVars.length > 0 ? ` (${eliminatedVars.join(', ')} elendi)` : ' (Tüm değişkenler korundu)';
+                explanations.push(`• <strong>${groupSize}'li Grup:</strong> m(${coveredOnes.join(', ')}) ➔ <code>${termStr}</code>${elimText}`);
+            });
+
+            const finalResult = terms.join(' + ');
+            resDisplay.textContent = 'F = ' + finalResult;
+            expDisplay.innerHTML = explanations.join('<br>');
+            currentKMapSimplifiedSOP = finalResult;
+
+            const rawLiterals = ones.length * currentKMapVars;
+            const optRate = rawLiterals > 0 ? Math.max(0, Math.round((1 - (totalMinimizedLiterals / rawLiterals)) * 100)) : 0;
+            
+            elimDisplay.textContent = `${chosen.length} Terim (${totalMinimizedLiterals} Literal)`;
+            if (optDisplay) optDisplay.textContent = `%${optRate} Tasarruf`;
         }
 
         function exportTableToKMap() {
@@ -1476,6 +1586,222 @@
             document.getElementById('resHex').textContent = hex;
             document.getElementById('res1sComp').textContent = ones;
             document.getElementById('res2sComp').textContent = twosVal;
+        }
+
+        
+        function generateCircuitSVG(expr) {
+            const exprClean = expr.replace(/\s+/g, '').replace(/[*•]/g, '');
+            
+            if (exprClean === '0') {
+                return {
+                    svg: '<svg viewBox="0 0 500 160" width="100%" style="font-family:\'Courier Prime\', monospace;"><rect width="100%" height="100%" fill="#1a1410" rx="8"/><line x1="250" y1="50" x2="250" y2="85" stroke="#d4a373" stroke-width="2.5"/><line x1="230" y1="85" x2="270" y2="85" stroke="#d4a373" stroke-width="3"/><line x1="237" y1="92" x2="263" y2="92" stroke="#d4a373" stroke-width="2.5"/><line x1="244" y1="99" x2="256" y2="99" stroke="#d4a373" stroke-width="2"/><text x="250" y="130" fill="#f5ede0" font-size="14" text-anchor="middle">F = 0 (GND / Mantıksal Sıfır)</text></svg>',
+                    stats: '0 Kapı',
+                    depth: '0 Seviye'
+                };
+            }
+            if (exprClean === '1') {
+                return {
+                    svg: '<svg viewBox="0 0 500 160" width="100%" style="font-family:\'Courier Prime\', monospace;"><rect width="100%" height="100%" fill="#1a1410" rx="8"/><line x1="250" y1="100" x2="250" y2="65" stroke="#d4a373" stroke-width="2.5"/><line x1="230" y1="65" x2="270" y2="65" stroke="#d4a373" stroke-width="3"/><text x="250" y="50" fill="#e5b869" font-weight="bold" font-size="16" text-anchor="middle">VCC (+5V)</text><text x="250" y="135" fill="#f5ede0" font-size="14" text-anchor="middle">F = 1 (Mantıksal Bir Sabiti)</text></svg>',
+                    stats: '0 Kapı',
+                    depth: '0 Seviye'
+                };
+            }
+
+            const rawTerms = exprClean.split('+').filter(t => t.length > 0);
+            const terms = [];
+            const varsSet = new Set();
+
+            rawTerms.forEach(t => {
+                const regex = /([A-Za-z])('?)/g;
+                let match;
+                const termLits = [];
+                while ((match = regex.exec(t)) !== null) {
+                    const v = match[1].toUpperCase();
+                    varsSet.add(v);
+                    termLits.push({ var: v, inverted: match[2] === "'" });
+                }
+                if (termLits.length > 0) terms.push(termLits);
+            });
+
+            if (terms.length === 0) {
+                return {
+                    svg: '<div style="color:var(--text-muted); text-align:center; padding:40px;">Geçerli bir Boolean ifadesi giriniz.</div>',
+                    stats: '--',
+                    depth: '--'
+                };
+            }
+
+            const varsList = Array.from(varsSet).sort();
+            const numVars = varsList.length;
+            const numTerms = terms.length;
+
+            const railStartX = 60;
+            const varGap = 48;
+            const railPositions = {};
+
+            varsList.forEach((v, i) => {
+                const tx = railStartX + i * varGap;
+                const ix = tx + 20;
+                railPositions[v] = tx;
+                railPositions[v + "'"] = ix;
+            });
+
+            const busWidth = railStartX + numVars * varGap + 20;
+            const andStartX = busWidth + 70;
+            const andWidth = 48;
+            const andHeight = 36;
+            const andSpacing = Math.max(64, Math.min(80, 240 / numTerms));
+            const totalHeight = Math.max(260, 100 + numTerms * andSpacing);
+
+            const orStartX = andStartX + andWidth + 80;
+            const orWidth = 56;
+            const orHeight = Math.max(48, Math.min(130, numTerms * 24));
+            const orCenterY = 70 + ((numTerms - 1) * andSpacing) / 2;
+
+            const svgWidth = numTerms > 1 ? (orStartX + orWidth + 100) : (andStartX + andWidth + 90);
+            const svgHeight = totalHeight + 40;
+
+            let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgWidth} ${svgHeight}" width="100%" style="font-family:\'Courier Prime\', monospace; max-height:480px;">`;
+            svg += `<rect width="100%" height="100%" fill="#1a1410" rx="8" />`;
+
+            varsList.forEach(v => {
+                const tx = railPositions[v];
+                const ix = railPositions[v + "'"];
+
+                svg += `<text x="${tx}" y="24" fill="#e5b869" font-weight="bold" font-size="13" text-anchor="middle">${v}</text>`;
+                svg += `<text x="${ix}" y="24" fill="#a83232" font-size="12" text-anchor="middle">${v}'</text>`;
+
+                svg += `<line x1="${tx}" y1="32" x2="${tx}" y2="${totalHeight}" stroke="#d4a373" stroke-width="1.8" />`;
+
+                svg += `<line x1="${tx}" y1="42" x2="${ix}" y2="42" stroke="#d4a373" stroke-width="1.5" />`;
+                svg += `<circle cx="${tx}" cy="42" r="2.5" fill="#e5b869" />`;
+
+                svg += `<polygon points="${ix-5},42 ${ix+5},42 ${ix},52" fill="#251c16" stroke="#d4a373" stroke-width="1.5" />`;
+                svg += `<circle cx="${ix}" cy="55" r="2.5" fill="#1a1410" stroke="#d4a373" stroke-width="1.5" />`;
+
+                svg += `<line x1="${ix}" y1="58" x2="${ix}" y2="${totalHeight}" stroke="#d4a373" stroke-width="1.8" />`;
+            });
+
+            const andOutputs = [];
+
+            terms.forEach((term, i) => {
+                const gy = 80 + i * andSpacing;
+                const gx = andStartX;
+                const k = term.length;
+
+                term.forEach((lit, idx) => {
+                    const wireKey = lit.var + (lit.inverted ? "'" : "");
+                    const rx = railPositions[wireKey];
+                    const pinY = k === 1 ? gy : (gy - andHeight/2 + 6) + idx * ((andHeight - 12) / (k - 1));
+
+                    svg += `<line x1="${rx}" y1="${pinY}" x2="${gx}" y2="${pinY}" stroke="#d4a373" stroke-width="1.5" />`;
+                    svg += `<circle cx="${rx}" cy="${pinY}" r="3" fill="#e5b869" />`;
+                });
+
+                if (k > 1) {
+                    const d = `M ${gx} ${gy - andHeight/2} L ${gx + andWidth/2} ${gy - andHeight/2} A ${andWidth/2} ${andHeight/2} 0 0 1 ${gx + andWidth/2} ${gy + andHeight/2} L ${gx} ${gy + andHeight/2} Z`;
+                    svg += `<path d="${d}" fill="#251c16" stroke="#d4a373" stroke-width="1.8" />`;
+                    svg += `<text x="${gx + 16}" y="${gy + 4}" fill="#f5ede0" font-size="9" opacity="0.6">AND</text>`;
+                } else {
+                    svg += `<line x1="${gx}" y1="${gy}" x2="${gx + andWidth}" y2="${gy}" stroke="#d4a373" stroke-width="1.5" />`;
+                }
+
+                andOutputs.push({ x: gx + andWidth, y: gy });
+            });
+
+            if (numTerms > 1) {
+                const ox = orStartX;
+                const oy = orCenterY;
+
+                andOutputs.forEach((out, idx) => {
+                    const pinY = (oy - orHeight/2 + 8) + idx * ((orHeight - 16) / (numTerms - 1));
+                    const midX = out.x + 22 + idx * 8;
+                    svg += `<polyline points="${out.x},${out.y} ${midX},${out.y} ${midX},${pinY} ${ox+6},${pinY}" fill="none" stroke="#d4a373" stroke-width="1.5" />`;
+                });
+
+                const topY = oy - orHeight/2;
+                const botY = oy + orHeight/2;
+                const tipX = ox + orWidth;
+                const backCtrlX = ox + 14;
+                const orD = `M ${ox} ${topY} Q ${backCtrlX} ${oy} ${ox} ${botY} Q ${ox + orWidth * 0.7} ${botY} ${tipX} ${oy} Q ${ox + orWidth * 0.7} ${topY} ${ox} ${topY} Z`;
+                svg += `<path d="${orD}" fill="#251c16" stroke="#e5b869" stroke-width="2" />`;
+                svg += `<text x="${ox + 18}" y="${oy + 4}" fill="#f5ede0" font-size="10" opacity="0.7">OR</text>`;
+
+                const finalX = tipX + 35;
+                svg += `<line x1="${tipX}" y1="${oy}" x2="${finalX}" y2="${oy}" stroke="#e5b869" stroke-width="2.2" />`;
+                svg += `<circle cx="${finalX}" cy="${oy}" r="3" fill="#e5b869" />`;
+                svg += `<text x="${finalX + 8}" y="${oy + 5}" fill="#e5b869" font-weight="bold" font-size="14">F</text>`;
+            } else {
+                const out = andOutputs[0];
+                const finalX = out.x + 40;
+                svg += `<line x1="${out.x}" y1="${out.y}" x2="${finalX}" y2="${out.y}" stroke="#e5b869" stroke-width="2.2" />`;
+                svg += `<circle cx="${finalX}" cy="${out.y}" r="3" fill="#e5b869" />`;
+                svg += `<text x="${finalX + 8}" y="${out.y + 5}" fill="#e5b869" font-weight="bold" font-size="14">F</text>`;
+            }
+
+            svg += '</svg>';
+
+            const numAnd = terms.filter(t => t.length > 1).length;
+            const numOr = numTerms > 1 ? 1 : 0;
+            const numNot = varsList.filter(v => terms.some(t => t.some(l => l.var === v && l.inverted))).length;
+            const totalGates = numAnd + numOr + numNot;
+
+            return {
+                svg: svg,
+                stats: `${numAnd} AND, ${numOr} OR, ${numNot} NOT (Toplam: ${totalGates} Kapı)`,
+                depth: (numAnd > 0 && numOr > 0) ? '2 Seviye (AND-OR)' : '1 Seviye'
+            };
+        }
+
+        function drawCircuitFromInput() {
+            const inputEl = document.getElementById('circuitExpr');
+            if (!inputEl) return;
+            const expr = inputEl.value.trim();
+            const res = generateCircuitSVG(expr);
+
+            const container = document.getElementById('circuitContainer');
+            if (container) container.innerHTML = res.svg;
+
+            const gateCountEl = document.getElementById('circuitGateCount');
+            if (gateCountEl) gateCountEl.textContent = res.stats;
+
+            const depthEl = document.getElementById('circuitDepth');
+            if (depthEl) depthEl.textContent = res.depth;
+        }
+
+        function setCircuitSample(expr) {
+            const inputEl = document.getElementById('circuitExpr');
+            if (inputEl) {
+                inputEl.value = expr;
+                drawCircuitFromInput();
+            }
+        }
+
+        function loadKMapToCircuit() {
+            switchTab('circuit');
+            const inputEl = document.getElementById('circuitExpr');
+            if (inputEl) {
+                inputEl.value = currentKMapSimplifiedSOP || 'A\'B + BC';
+                drawCircuitFromInput();
+            }
+        }
+
+        function exportCircuitSVG() {
+            const container = document.getElementById('circuitContainer');
+            if (!container) return;
+            const svg = container.querySelector('svg');
+            if (!svg) return;
+
+            const svgData = new XMLSerializer().serializeToString(svg);
+            const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'devre_sematigi.svg';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
         }
 
         window.addEventListener('DOMContentLoaded', () => {
