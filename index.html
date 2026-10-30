@@ -1060,7 +1060,7 @@
                 <div class="form-group">
                     <label for="circuitExpr">Şematiği Çizilecek Boolean Fonksiyonu:</label>
                     <div class="input-wrap">
-                        <input type="text" id="circuitExpr" value="A'B + BC + A'C'" placeholder="Örn: A'B + BC + A'C'">
+                        <input type="text" id="circuitExpr" value="A'B + BC + A'C'" placeholder="Örn: A'B + BC + A'C'" oninput="drawCircuitFromInput()" onkeydown="if(event.key==='Enter') drawCircuitFromInput()">
                         <button class="btn-primary" onclick="drawCircuitFromInput()">Devreyi Çiz</button>
                     </div>
                 </div>
@@ -1107,6 +1107,10 @@
             
             const panel = document.getElementById('tab-' + tabId);
             if (panel) panel.classList.add('active');
+
+            if (tabId === 'circuit') {
+                setTimeout(drawCircuitFromInput, 10);
+            }
         }
 
         function insertExpr(val) {
