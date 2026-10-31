@@ -635,9 +635,10 @@
     
         .live-presence {
             position: fixed;
-            bottom: 16px;
+            bottom: 18px;
             right: 18px;
-            z-index: 999;
+            z-index: 99999;
+            pointer-events: none;
             display: inline-flex;
             align-items: center;
             gap: 7px;
@@ -1132,6 +1133,10 @@
     <footer>
         <p>Geliştiren: <strong>0xStoic-bit</strong> • <span style="font-style: italic; color: var(--accent-brass); opacity: 0.9; letter-spacing: 0.5px;">for F</span></p>
     </footer>
+    <div class="live-presence" id="livePresenceBadge" title="Anlık aktif kullanıcı">
+        <span class="presence-dot"></span>
+        <span id="livePresenceText">1 çevrimiçi</span>
+    </div>
 
     <script>
 
