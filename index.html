@@ -1870,7 +1870,7 @@
             function renderCount() {
                 const now = Date.now();
                 for (const [id, lastSeen] of activePeers.entries()) {
-                    if (id !== myId && now - lastSeen > 25000) {
+                    if (id !== myId && now - lastSeen > 12000) {
                         activePeers.delete(id);
                     }
                 }
@@ -1942,10 +1942,21 @@
                     setInterval(() => {
                         sendStatus('heartbeat');
                         renderCount();
-                    }, 10000);
+                    }, 4000);
 
-                    window.addEventListener('beforeunload', () => {
+                                        window.addEventListener('beforeunload', () => {
                         sendStatus('leave');
+                    });
+                    window.addEventListener('pagehide', () => {
+                        sendStatus('leave');
+                    });
+                    document.addEventListener('visibilitychange', () => {
+                        if (document.visibilityState === 'hidden') {
+                            sendStatus('leave');
+                        } else {
+                            sendStatus('hello');
+                        }
+                        renderCount();
                     });
                 } catch(err) {
                     renderCount();
