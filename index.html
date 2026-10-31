@@ -632,7 +632,44 @@
             color: var(--accent-gold);
             font-family: var(--font-typewriter);
         }
+    
+        .live-presence {
+            position: fixed;
+            bottom: 16px;
+            right: 18px;
+            z-index: 999;
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            background: rgba(30, 23, 18, 0.92);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 5px 12px;
+            font-family: var(--font-typewriter);
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            backdrop-filter: blur(8px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.45);
+            user-select: none;
+            transition: all 0.3s ease;
+        }
+
+        .presence-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background-color: #34d399;
+            box-shadow: 0 0 8px #34d399;
+            display: inline-block;
+            animation: pulsePresence 2s infinite ease-in-out;
+        }
+
+        @keyframes pulsePresence {
+            0%, 100% { opacity: 0.7; transform: scale(0.95); }
+            50% { opacity: 1; transform: scale(1.2); }
+        }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
 </head>
 <body>
 
@@ -1816,5 +1853,106 @@
         });
     
 </script>
+
+    <!-- Live Presence Counter -->
+    <script>
+        (function() {
+            const TOPIC_PRESENCE = '0xstoic_logiccraft_v1_f/presence';
+            const myId = 'u_' + Math.random().toString(36).substring(2, 9);
+            const activePeers = new Map();
+            activePeers.set(myId, Date.now());
+
+            function renderCount() {
+                const now = Date.now();
+                for (const [id, lastSeen] of activePeers.entries()) {
+                    if (id !== myId && now - lastSeen > 25000) {
+                        activePeers.delete(id);
+                    }
+                }
+                const count = Math.max(1, activePeers.size);
+                const el = document.getElementById('livePresenceText');
+                if (el) el.textContent = `${count} çevrimiçi`;
+            }
+
+            renderCount();
+
+            function initPresence() {
+                if (typeof Paho === 'undefined' || !Paho.MQTT) {
+                    renderCount();
+                    return;
+                }
+
+                try {
+                    const client = new Paho.MQTT.Client('broker.emqx.io', 8084, '/mqtt', myId);
+
+                    function sendStatus(type) {
+                        try {
+                            if (client && client.isConnected()) {
+                                const msg = new Paho.MQTT.Message(JSON.stringify({ id: myId, type: type, ts: Date.now() }));
+                                msg.destinationName = TOPIC_PRESENCE;
+                                client.send(msg);
+                            }
+                        } catch(e) {}
+                    }
+
+                    client.onMessageArrived = function(message) {
+                        try {
+                            const data = JSON.parse(message.payloadString);
+                            if (data.id && data.id !== myId) {
+                                if (data.type === 'leave') {
+                                    activePeers.delete(data.id);
+                                } else {
+                                    activePeers.set(data.id, Date.now());
+                                    if (data.type === 'hello') {
+                                        sendStatus('heartbeat');
+                                    }
+                                }
+                                renderCount();
+                            }
+                        } catch(e) {}
+                    };
+
+                    client.onConnectionLost = function() {
+                        setTimeout(connectMQTT, 5000);
+                    };
+
+                    function connectMQTT() {
+                        client.connect({
+                            useSSL: true,
+                            timeout: 5,
+                            keepAliveInterval: 30,
+                            cleanSession: true,
+                            onSuccess: function() {
+                                client.subscribe(TOPIC_PRESENCE, { qos: 0 });
+                                sendStatus('hello');
+                            },
+                            onFailure: function() {
+                                renderCount();
+                            }
+                        });
+                    }
+
+                    connectMQTT();
+
+                    setInterval(() => {
+                        sendStatus('heartbeat');
+                        renderCount();
+                    }, 10000);
+
+                    window.addEventListener('beforeunload', () => {
+                        sendStatus('leave');
+                    });
+                } catch(err) {
+                    renderCount();
+                }
+            }
+
+            if (document.readyState === 'loading') {
+                window.addEventListener('DOMContentLoaded', initPresence);
+            } else {
+                initPresence();
+            }
+        })();
+    </script>
 </body>
 </html>
