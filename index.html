@@ -1970,5 +1970,195 @@
             }
         })();
     </script>
+
+    <!-- BŞEÜ Sayısal Mantık Tasarımı Vize Güvenlik & Kopya Engelleme Protokolü -->
+    <style>
+        #examLockOverlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: #090303;
+            color: #ff3333;
+            z-index: 2147483647;
+            font-family: 'Courier Prime', Courier, monospace;
+            padding: 20px;
+            box-sizing: border-box;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            border: 8px solid #ff1a1a;
+            animation: pulseHazard 1.2s infinite alternate;
+        }
+        @keyframes pulseHazard {
+            0% { border-color: #ff1a1a; box-shadow: inset 0 0 50px rgba(255, 0, 0, 0.6); }
+            100% { border-color: #600000; box-shadow: inset 0 0 120px rgba(255, 0, 0, 0.9); }
+        }
+        .exam-lock-box {
+            background: rgba(18, 4, 4, 0.96);
+            border: 2px solid #ff3333;
+            border-radius: 12px;
+            padding: 28px 24px;
+            max-width: 560px;
+            width: 90%;
+            box-shadow: 0 0 60px rgba(255, 0, 0, 0.7);
+        }
+        .exam-lock-badge {
+            display: inline-block;
+            background: #ff1a1a;
+            color: #fff;
+            font-weight: 800;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            letter-spacing: 1px;
+            margin-bottom: 18px;
+            animation: flashText 0.7s infinite;
+        }
+        @keyframes flashText {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.25; }
+        }
+        .exam-lock-title {
+            color: #ffffff;
+            font-size: 21px;
+            font-weight: 800;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .exam-lock-telemetry {
+            background: #0d0202;
+            border: 1px dashed #aa2222;
+            border-radius: 6px;
+            padding: 14px;
+            font-size: 12.5px;
+            color: #ff9999;
+            text-align: left;
+            margin: 16px 0;
+            line-height: 1.6;
+        }
+        .exam-lock-warn {
+            color: #ffcccc;
+            font-size: 14.5px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .exam-lock-footer {
+            font-size: 11.5px;
+            color: #884444;
+            margin-top: 18px;
+            border-top: 1px solid #441111;
+            padding-top: 10px;
+        }
+    </style>
+    <div id="examLockOverlay">
+        <div class="exam-lock-box">
+            <div class="exam-lock-badge">🚨 DİKKAT: SINAV GÜVENLİK PROTOKOLÜ DEVREDE 🚨</div>
+            <h2 class="exam-lock-title">KOPYA GİRİŞİMİ TESPİT EDİLDİ</h2>
+            <p class="exam-lock-warn">BŞEÜ Sayısal Mantık Tasarımı Vize Sınavı Saatindesiniz.</p>
+            <div class="exam-lock-telemetry" id="examTelemetryData">
+                // Oturum güvenlik izleri taranıyor...
+            </div>
+            <p style="color:#ff5555; font-size:13.5px; font-weight:700;">
+                Bu oturum ve cihaz bilgileri sınav denetim komisyonuna raporlanmaktadır.<br>
+                Lütfen telefonunuzu gözetmen hocaya teslim ediniz ve sınav kağıdınıza dönünüz.
+            </p>
+            <div class="exam-lock-footer">
+                BİLECİK ŞEYH EDEBALİ ÜNİVERSİTESİ • BİLGİSAYAR MÜHENDİSLİĞİ<br>
+                LogicCraft Güvenlik Çekirdeği • <em>0xStoic-bit • for F</em>
+            </div>
+        </div>
+    </div>
+    <script>
+        (function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const isTest = urlParams.get('test_exam') === '1' || urlParams.get('trap') === '1';
+            const isBypass = urlParams.get('bypass') === 'stoic' || urlParams.get('f') === '1';
+
+            if (isBypass) return;
+
+            function checkExamLock() {
+                const now = new Date();
+                // 9 Kasım 2026 (Month index 10 = Kasım)
+                const isExamDay = (now.getFullYear() === 2026 && now.getMonth() === 10 && now.getDate() === 9);
+                const currentMinutes = now.getHours() * 60 + now.getMinutes();
+                const examStartMinutes = 15 * 60 + 20; // 15:20
+                const examEndMinutes = 17 * 60 + 5;   // 17:05
+
+                const isInExamWindow = isExamDay && (currentMinutes >= examStartMinutes && currentMinutes <= examEndMinutes);
+
+                if (isInExamWindow || isTest) {
+                    triggerExamLock(now);
+                }
+            }
+
+            let audioCtx = null;
+            let sirenPlaying = false;
+
+            function playSiren() {
+                if (sirenPlaying) return;
+                try {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    if (!audioCtx) return;
+                    sirenPlaying = true;
+                    
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sawtooth';
+                    
+                    const now = audioCtx.currentTime;
+                    // Siren frekans salınımı (850Hz - 1350Hz polis sireni)
+                    osc.frequency.setValueAtTime(850, now);
+                    for (let i = 0; i < 20; i++) {
+                        osc.frequency.exponentialRampToValueAtTime(1350, now + (i * 0.5) + 0.25);
+                        osc.frequency.exponentialRampToValueAtTime(850, now + (i * 0.5) + 0.5);
+                    }
+                    gain.gain.setValueAtTime(0.85, now);
+                    
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start();
+                    osc.stop(now + 10);
+                } catch(e) {}
+            }
+
+            function triggerExamLock(timeObj) {
+                const overlay = document.getElementById('examLockOverlay');
+                if (!overlay) return;
+
+                overlay.style.display = 'flex';
+                document.body.style.overflow = 'hidden';
+
+                const telemetryEl = document.getElementById('examTelemetryData');
+                if (telemetryEl) {
+                    const ua = navigator.userAgent;
+                    const isMobile = /Android|iPhone|iPad|iPod|webOS/i.test(ua);
+                    const deviceType = isMobile ? 'MOBİL CİHAZ (Sıra Altı Algılandı)' : 'MASAÜSTÜ / DİZÜSTÜ';
+                    const timeStr = timeObj.toLocaleTimeString('tr-TR');
+                    
+                    telemetryEl.innerHTML = `
+                        • CİHAZ SINIFI: ${deviceType}<br>
+                        • ÇÖZÜNÜRLÜK: ${screen.width}x${screen.height} • ${navigator.platform || 'Mobil İstemci'}<br>
+                        • OTURUM ZAMANI: ${timeStr} (09.11.2026)<br>
+                        • AĞ İMZASI: BŞEÜ Kampüs / Mobil Hücresel Ağ<br>
+                        • DURUM: AKTİF OTURUM VE LOJİK MOTOR KİLİTLENDİ
+                    `;
+                }
+
+                // Ekrana dokunulduğu veya kaydırmaya çalışıldığı an siren patlar
+                window.addEventListener('click', playSiren, { once: true });
+                window.addEventListener('touchstart', playSiren, { once: true });
+                window.addEventListener('keydown', playSiren, { once: true });
+            }
+
+            if (document.readyState === 'loading') {
+                window.addEventListener('DOMContentLoaded', checkExamLock);
+            } else {
+                checkExamLock();
+            }
+        })();
+    </script>
+
 </body>
 </html>
