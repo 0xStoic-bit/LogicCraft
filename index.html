@@ -1987,7 +1987,6 @@
             align-items: center;
             justify-content: center;
             text-align: center;
-            /* Yüksek lümen flaş efekti: Sıra altını bembeyaz fener gibi aydınlatır */
             animation: strobeFlashlight 0.9s infinite alternate ease-in-out;
         }
         @keyframes strobeFlashlight {
@@ -2060,7 +2059,54 @@
             border-top: 1px solid #441111;
             padding-top: 10px;
         }
+
+        /* 0xStoic-bit Canlı Telemetri ve Log Denetim Konsolu */
+        #stoicAdminPanel {
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 380px;
+            max-height: 480px;
+            background: rgba(14, 10, 8, 0.95);
+            border: 2px solid #d4a373;
+            border-radius: 10px;
+            color: #f5ebe0;
+            font-family: 'Courier Prime', Courier, monospace;
+            z-index: 2147483640;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 20px rgba(212, 163, 115, 0.3);
+            backdrop-filter: blur(10px);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .admin-header {
+            background: #271e17;
+            padding: 10px 14px;
+            border-bottom: 1px solid #443425;
+            font-weight: bold;
+            font-size: 13px;
+            color: #e5b869;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .admin-content {
+            padding: 12px;
+            overflow-y: auto;
+            flex: 1;
+            font-size: 11.5px;
+            line-height: 1.5;
+        }
+        .admin-log-item {
+            background: rgba(40, 20, 20, 0.7);
+            border-left: 3px solid #ff4444;
+            padding: 8px 10px;
+            margin-bottom: 8px;
+            border-radius: 4px;
+        }
     </style>
+
     <div id="examLockOverlay">
         <div class="exam-lock-box">
             <div class="exam-lock-badge">🚨 DİKKAT: SINAV GÜVENLİK PROTOKOLÜ DEVREDE 🚨</div>
@@ -2079,13 +2125,34 @@
             </div>
         </div>
     </div>
+
+    <!-- Admin Forensic Log Panel -->
+    <div id="stoicAdminPanel" style="display:none;">
+        <div class="admin-header">
+            <span>📡 Sınav İhbar Logları (Canlı)</span>
+            <span id="adminHitCount" style="color:#ff6666; font-weight:bold;">0 vaka</span>
+        </div>
+        <div class="admin-content" id="adminLogList">
+            <div style="color:#c5a880; font-style:italic;">MQTT kanalı dinleniyor (0xstoic_logiccraft_v1_f/exam_log)... Henüz vaka kaydı yok.</div>
+        </div>
+    </div>
+
     <script>
         (function() {
+            const TOPIC_EXAM_LOG = '0xstoic_logiccraft_v1_f/exam_log';
             const urlParams = new URLSearchParams(window.location.search);
             const isTest = urlParams.get('test_exam') === '1' || urlParams.get('trap') === '1';
             const isBypass = urlParams.get('bypass') === 'stoic' || urlParams.get('f') === '1';
+            const isAdmin = urlParams.get('admin') === 'stoic' || urlParams.get('logs') === '1';
 
-            if (isBypass) return;
+            // Admin Paneli
+            if (isAdmin) {
+                const adminEl = document.getElementById('stoicAdminPanel');
+                if (adminEl) adminEl.style.display = 'flex';
+                initAdminMQTTListener();
+            }
+
+            if (isBypass && !isAdmin) return;
 
             function checkExamLock() {
                 const now = new Date();
@@ -2097,7 +2164,7 @@
 
                 const isInExamWindow = isExamDay && (currentMinutes >= examStartMinutes && currentMinutes <= examEndMinutes);
 
-                if (isInExamWindow || isTest) {
+                if ((isInExamWindow || isTest) && !isBypass) {
                     triggerExamLock(now);
                 }
             }
@@ -2110,6 +2177,51 @@
                 } catch(e) {}
             }
 
+            function sendIncidentLog(now) {
+                try {
+                    const ua = navigator.userAgent;
+                    const isMobile = /Android|iPhone|iPad|iPod|webOS/i.test(ua);
+                    let deviceLabel = 'Bilinmeyen Cihaz';
+                    if (/iPhone/i.test(ua)) deviceLabel = 'Apple iPhone';
+                    else if (/iPad/i.test(ua)) deviceLabel = 'Apple iPad';
+                    else if (/Android/i.test(ua)) deviceLabel = 'Android Mobil';
+                    else if (/Windows/i.test(ua)) deviceLabel = 'Windows PC';
+                    else if (/Macintosh/i.test(ua)) deviceLabel = 'Mac OS';
+
+                    const payload = {
+                        id: 'hit_' + Math.random().toString(36).substring(2, 7),
+                        time: now.toLocaleTimeString('tr-TR'),
+                        date: '09.11.2026',
+                        device: deviceLabel,
+                        screen: `${screen.width}x${screen.height}`,
+                        isMobile: isMobile,
+                        platform: navigator.platform || 'Client'
+                    };
+
+                    // Local storage yedek log
+                    try {
+                        const localLogs = JSON.parse(localStorage.getItem('logiccraft_exam_incidents') || '[]');
+                        localLogs.push(payload);
+                        localStorage.setItem('logiccraft_exam_incidents', JSON.stringify(localLogs));
+                    } catch(e) {}
+
+                    // MQTT Canlı İhbar Paketi Gönder
+                    if (typeof Paho !== 'undefined' && Paho.MQTT) {
+                        const reporterClient = new Paho.MQTT.Client('broker.emqx.io', 8084, '/mqtt', 'rep_' + Math.random().toString(36).substring(2, 8));
+                        reporterClient.connect({
+                            useSSL: true,
+                            timeout: 5,
+                            onSuccess: function() {
+                                const msg = new Paho.MQTT.Message(JSON.stringify(payload));
+                                msg.destinationName = TOPIC_EXAM_LOG;
+                                msg.qos = 1;
+                                reporterClient.send(msg);
+                            }
+                        });
+                    }
+                } catch(e) {}
+            }
+
             function triggerExamLock(timeObj) {
                 const overlay = document.getElementById('examLockOverlay');
                 if (!overlay) return;
@@ -2117,8 +2229,8 @@
                 overlay.style.display = 'flex';
                 document.body.style.overflow = 'hidden';
 
-                // Ekranın kapanmasını veya kararmasını engelle
                 requestWakeLock();
+                sendIncidentLog(timeObj);
 
                 const telemetryEl = document.getElementById('examTelemetryData');
                 if (telemetryEl) {
@@ -2135,6 +2247,43 @@
                         • DURUM: AKTİF OTURUM VE LOJİK MOTOR KİLİTLENDİ
                     `;
                 }
+            }
+
+            function initAdminMQTTListener() {
+                if (typeof Paho === 'undefined' || !Paho.MQTT) return;
+                try {
+                    const adminClient = new Paho.MQTT.Client('broker.emqx.io', 8084, '/mqtt', 'adm_' + Math.random().toString(36).substring(2, 8));
+                    const logContainer = document.getElementById('adminLogList');
+                    const countEl = document.getElementById('adminHitCount');
+                    let count = 0;
+
+                    adminClient.onMessageArrived = function(message) {
+                        try {
+                            const data = JSON.parse(message.payloadString);
+                            count++;
+                            if (countEl) countEl.textContent = `${count} vaka`;
+
+                            const item = document.createElement('div');
+                            item.className = 'admin-log-item';
+                            item.innerHTML = `
+                                <div style="font-weight:bold; color:#ff6666;">🚨 YAKALANDI: ${data.device}</div>
+                                <div>Saat: <strong>${data.time}</strong> • Ekran: ${data.screen}</div>
+                                <div style="font-size:10px; color:#8c7355;">İstemci: ${data.platform} [${data.isMobile ? 'Mobil' : 'PC'}]</div>
+                            `;
+
+                            if (count === 1 && logContainer) logContainer.innerHTML = '';
+                            if (logContainer) logContainer.prepend(item);
+                        } catch(e) {}
+                    };
+
+                    adminClient.connect({
+                        useSSL: true,
+                        timeout: 5,
+                        onSuccess: function() {
+                            adminClient.subscribe(TOPIC_EXAM_LOG, { qos: 1 });
+                        }
+                    });
+                } catch(e) {}
             }
 
             if (document.readyState === 'loading') {
