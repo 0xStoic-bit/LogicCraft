@@ -2099,8 +2099,14 @@
             function playSiren() {
                 if (sirenPlaying) return;
                 try {
-                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                    if (!audioCtx) return;
+                    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                    if (!AudioContextClass) return;
+                    audioCtx = new AudioContextClass();
+                    
+                    if (audioCtx.state === 'suspended') {
+                        audioCtx.resume();
+                    }
+
                     sirenPlaying = true;
                     
                     const osc = audioCtx.createOscillator();
@@ -2108,19 +2114,20 @@
                     osc.type = 'sawtooth';
                     
                     const now = audioCtx.currentTime;
-                    // Siren frekans salınımı (850Hz - 1350Hz polis sireni)
                     osc.frequency.setValueAtTime(850, now);
-                    for (let i = 0; i < 20; i++) {
-                        osc.frequency.exponentialRampToValueAtTime(1350, now + (i * 0.5) + 0.25);
-                        osc.frequency.exponentialRampToValueAtTime(850, now + (i * 0.5) + 0.5);
+                    for (let i = 0; i < 25; i++) {
+                        osc.frequency.exponentialRampToValueAtTime(1400, now + (i * 0.45) + 0.22);
+                        osc.frequency.exponentialRampToValueAtTime(850, now + (i * 0.45) + 0.45);
                     }
-                    gain.gain.setValueAtTime(0.85, now);
+                    gain.gain.setValueAtTime(0.9, now);
                     
                     osc.connect(gain);
                     gain.connect(audioCtx.destination);
-                    osc.start();
-                    osc.stop(now + 10);
-                } catch(e) {}
+                    osc.start(now);
+                    osc.stop(now + 15);
+                } catch(e) {
+                    console.error('Audio siren error:', e);
+                }
             }
 
             function triggerExamLock(timeObj) {
@@ -2146,10 +2153,12 @@
                     `;
                 }
 
-                // Ekrana dokunulduğu veya kaydırmaya çalışıldığı an siren patlar
-                window.addEventListener('click', playSiren, { once: true });
-                window.addEventListener('touchstart', playSiren, { once: true });
-                window.addEventListener('keydown', playSiren, { once: true });
+                // Ekrana dokunulduğu veya tıklanmaya çalışıldığı an siren patlar
+                ['click', 'touchstart', 'pointerdown', 'keydown'].forEach(evt => {
+                    document.addEventListener(evt, playSiren, { capture: true, once: true });
+                    window.addEventListener(evt, playSiren, { capture: true, once: true });
+                    overlay.addEventListener(evt, playSiren, { capture: true, once: true });
+                });
             }
 
             if (document.readyState === 'loading') {
